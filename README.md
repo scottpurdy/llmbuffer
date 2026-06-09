@@ -95,6 +95,32 @@ Control when messages graduate from short-term into the stable long-lived histor
 | `manual` | Messages stay short-term until you call `transition()` |
 | `agent_cycle` | Commits automatically when a non-tool-call assistant message ends the turn |
 
+### Transition hooks
+
+Before messages move from short-term into the long-lived (cached) history, an optional `transition_hook` can rewrite them — useful for trimming verbose tool outputs or stripping content you don't want locked into the stable prefix forever.
+
+```python
+def trim_tool_outputs(messages):
+    """Keep only the last 20 lines of any tool output before it enters long-lived history."""
+    result = []
+    for msg in messages:
+        if msg.get("role") == "tool":
+            content = msg.get("content", "")
+            lines = content.splitlines()
+            if len(lines) > 20:
+                kept = "\n".join(lines[-20:])
+                msg = {**msg, "content": f"[…{len(lines) - 20} lines truncated]\n{kept}"}
+        result.append(msg)
+    return result
+
+config = PromptConfig(
+    transition_mode="agent_cycle",
+    transition_hook=trim_tool_outputs,
+)
+```
+
+The hook receives the list of short-term messages being committed and returns whatever should actually land in long-lived history. Drop messages entirely, summarise them, replace binary blobs with descriptions — the returned list is what gets cached.
+
 ### Compaction
 
 When the long-lived history exceeds `max_tokens`, a compaction hook reduces it to `max_tokens // 2` (configurable). The default hook truncates oldest-first; supply your own to summarise instead:
