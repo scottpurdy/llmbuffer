@@ -47,7 +47,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from .config import PromptConfig, TransitionMode
+from .config import TransitionMode
 from .manager import PromptManager
 
 Message = Dict[str, Any]
@@ -602,12 +602,10 @@ def _dynamic_changed(turn: int) -> bool:
 
 def _make_llmbuffer_manager() -> PromptManager:
     return PromptManager(
-        PromptConfig(
-            static_system_prompt=STATIC_SYSTEM,
-            transition_mode=TransitionMode.AGENT_CYCLE,
-            max_tokens=MAX_TOKENS,
-            dynamic_system_role="user",
-        )
+        static_system_prompt=STATIC_SYSTEM,
+        transition_mode=TransitionMode.AGENT_CYCLE,
+        max_tokens=MAX_TOKENS,
+        dynamic_system_role="user",
     )
 
 
@@ -675,7 +673,7 @@ def run_simulated(
     when ``compare=False``.
     """
     manager = _make_llmbuffer_manager()
-    adapter = manager.config.adapter
+    adapter = manager.adapter
     sim_llmbuf = _SimulatedCache()
     sim_naive = _SimulatedCache() if compare else None
 
@@ -755,7 +753,7 @@ def run_live(
     llmbuf_report = BenchmarkReport(
         provider=provider_name, model=provider.model, approach="llmbuffer"
     )
-    naive_chat = _NaiveChat(llmbuf_mgr.config.adapter) if compare else None
+    naive_chat = _NaiveChat(llmbuf_mgr.adapter) if compare else None
     naive_report = (
         BenchmarkReport(provider=provider_name, model=provider.model, approach="naive")
         if compare

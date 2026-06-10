@@ -4,15 +4,16 @@ import json
 
 import pytest
 
-from llmbuffer import PromptConfig, functional, loads, new_state
+from llmbuffer import functional, loads, new_state
 from llmbuffer.benchmark import run_simulated
 from llmbuffer.state import dumps, validate_state
 
 
 def test_round_trip():
-    config = PromptConfig(transition_mode="manual")
     state = new_state()
-    state = functional.append_message(state, {"role": "user", "content": "q"}, config)
+    state = functional.append_message(
+        state, {"role": "user", "content": "q"}, transition_mode="manual"
+    )
     restored = loads(dumps(state))
     assert restored == state
 

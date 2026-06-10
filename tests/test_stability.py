@@ -7,7 +7,7 @@ turns, so the provider cache prefix stays byte-stable.
 
 import json
 
-from llmbuffer import PromptConfig, PromptManager, functional, new_state
+from llmbuffer import PromptManager, functional, new_state
 
 
 def _snapshot_prefix(messages, prefix_len):
@@ -15,8 +15,9 @@ def _snapshot_prefix(messages, prefix_len):
 
 
 def test_prefix_identical_across_turns():
-    config = PromptConfig(static_system_prompt="STATIC", transition_mode="agent_cycle")
-    manager = PromptManager(config)
+    manager = PromptManager(
+        static_system_prompt="STATIC", transition_mode="agent_cycle"
+    )
     manager.append({"role": "user", "content": "q1"})
     manager.append({"role": "assistant", "content": "a1"})  # cycle ends -> transition
 
@@ -37,23 +38,21 @@ def test_prefix_identical_across_turns():
 
 
 def test_dynamic_prompt_changes_do_not_touch_prefix():
-    config = PromptConfig(static_system_prompt="STATIC")
-    state = functional.append_message(
-        new_state(), {"role": "user", "content": "q"}, config
+    state = functional.append_message(new_state(), {"role": "user", "content": "q"})
+    a = functional.build_messages(
+        state, static_system_prompt="STATIC", dynamic_system_prompt="t=1"
     )
-    a = functional.build_messages(state, config, dynamic_system_prompt="t=1")
-    b = functional.build_messages(state, config, dynamic_system_prompt="t=2")
+    b = functional.build_messages(
+        state, static_system_prompt="STATIC", dynamic_system_prompt="t=2"
+    )
     assert a[:2] == b[:2]  # static + long-lived identical
     assert a[2] != b[2]
 
 
 def test_build_messages_does_not_mutate_state():
-    config = PromptConfig(static_system_prompt="STATIC")
-    state = functional.append_message(
-        new_state(), {"role": "user", "content": "q"}, config
-    )
+    state = functional.append_message(new_state(), {"role": "user", "content": "q"})
     before = json.dumps(state, sort_keys=True)
-    messages = functional.build_messages(state, config)
+    messages = functional.build_messages(state, static_system_prompt="STATIC")
     messages[0]["content"] = "TAMPERED"
     messages[-1]["content"] = "TAMPERED"
     assert json.dumps(state, sort_keys=True) == before
@@ -62,8 +61,7 @@ def test_build_messages_does_not_mutate_state():
 def test_cache_markers_do_not_mutate_state():
     from llmbuffer import AnthropicAdapter
 
-    config = PromptConfig(static_system_prompt="STATIC", adapter=AnthropicAdapter())
-    manager = PromptManager(config)
+    manager = PromptManager(static_system_prompt="STATIC", adapter=AnthropicAdapter())
     manager.append({"role": "user", "content": "q"})
     before = manager.to_json()
     manager.build_messages(dynamic_system_prompt="dyn")
@@ -71,8 +69,7 @@ def test_cache_markers_do_not_mutate_state():
 
 
 def test_cache_prefix_helper_stable_identity():
-    config = PromptConfig(static_system_prompt="STATIC", transition_mode="manual")
-    manager = PromptManager(config)
+    manager = PromptManager(static_system_prompt="STATIC", transition_mode="manual")
     manager.append({"role": "user", "content": "q1"}).append(
         {"role": "assistant", "content": "a1"}
     ).transition()
@@ -83,10 +80,11 @@ def test_cache_prefix_helper_stable_identity():
 
 
 def test_serialization_round_trip_preserves_prefix():
-    config = PromptConfig(static_system_prompt="STATIC", transition_mode="manual")
-    manager = PromptManager(config)
+    manager = PromptManager(static_system_prompt="STATIC", transition_mode="manual")
     manager.append({"role": "user", "content": "q"}).transition()
     payload = manager.to_json()
-    restored = PromptManager.from_json(payload, config)
+    restored = PromptManager.from_json(
+        payload, static_system_prompt="STATIC", transition_mode="manual"
+    )
     assert restored.build_messages() == manager.build_messages()
     assert restored.state == manager.state

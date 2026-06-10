@@ -1,51 +1,49 @@
 """Message-assembly ordering and cache-marker tests."""
 
-from llmbuffer import (
-    AnthropicAdapter,
-    PromptConfig,
-    PromptManager,
-    functional,
-    new_state,
-)
+from llmbuffer import AnthropicAdapter, PromptManager, functional, new_state
 
 
 def test_strict_ordering():
-    config = PromptConfig(static_system_prompt="STATIC", transition_mode="manual")
     state = new_state()
     # Two committed turns
-    state = functional.append_message(state, {"role": "user", "content": "old q"}, config)
-    state = functional.append_message(state, {"role": "assistant", "content": "old a"}, config)
-    state = functional.transition(state, config)
+    state = functional.append_message(
+        state, {"role": "user", "content": "old q"}, transition_mode="manual"
+    )
+    state = functional.append_message(
+        state, {"role": "assistant", "content": "old a"}, transition_mode="manual"
+    )
+    state = functional.transition(state)
     # One short-term turn
-    state = functional.append_message(state, {"role": "user", "content": "new q"}, config)
+    state = functional.append_message(
+        state, {"role": "user", "content": "new q"}, transition_mode="manual"
+    )
 
-    messages = functional.build_messages(state, config, dynamic_system_prompt="DYNAMIC")
+    messages = functional.build_messages(
+        state, static_system_prompt="STATIC", dynamic_system_prompt="DYNAMIC"
+    )
     assert [m["content"] for m in messages] == ["STATIC", "old q", "old a", "DYNAMIC", "new q"]
     assert messages[0]["role"] == "system"
     assert messages[3]["role"] == "system"
 
 
 def test_no_static_no_dynamic():
-    config = PromptConfig()
-    state = functional.append_message(
-        new_state(), {"role": "user", "content": "hi"}, config
-    )
-    assert functional.build_messages(state, config) == [{"role": "user", "content": "hi"}]
+    state = functional.append_message(new_state(), {"role": "user", "content": "hi"})
+    assert functional.build_messages(state) == [{"role": "user", "content": "hi"}]
 
 
 def test_dynamic_system_role_override():
-    config = PromptConfig(dynamic_system_role="user")
-    messages = functional.build_messages(new_state(), config, dynamic_system_prompt="ctx")
+    messages = functional.build_messages(
+        new_state(), dynamic_system_prompt="ctx", dynamic_system_role="user"
+    )
     assert messages == [{"role": "user", "content": "ctx"}]
 
 
 def test_anthropic_cache_markers_at_boundaries():
-    config = PromptConfig(
+    manager = PromptManager(
         static_system_prompt="STATIC",
         adapter=AnthropicAdapter(),
         transition_mode="manual",
     )
-    manager = PromptManager(config)
     manager.append({"role": "user", "content": "q1"})
     manager.append({"role": "assistant", "content": "a1"})
     manager.transition()
@@ -62,8 +60,7 @@ def test_anthropic_cache_markers_at_boundaries():
 
 
 def test_openai_adapter_injects_no_markers():
-    config = PromptConfig(static_system_prompt="STATIC")
-    manager = PromptManager(config)
+    manager = PromptManager(static_system_prompt="STATIC")
     manager.append({"role": "user", "content": "q"})
     for msg in manager.build_messages():
         assert "cache_control" not in str(msg)
