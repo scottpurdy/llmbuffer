@@ -26,9 +26,31 @@ Message = Dict[str, Any]
 State = Dict[str, Any]
 
 
-def new_state() -> State:
-    """Create a fresh, empty conversation state."""
-    return {"version": STATE_VERSION, "long_lived": [], "short_term": []}
+def new_state(
+    initial_context: "str | None" = None, context_key: str = "context"
+) -> State:
+    """Create a fresh conversation state.
+
+    ``initial_context`` seeds the long-lived history with a keyed context
+    message — identical to calling
+    :func:`llmbuffer.functional.append_context` on an empty state in
+    ``none`` mode. Doing it at creation time means the block is in the
+    stable prefix from the very first request.
+
+    Note: the state holds *all* conversation content except two things —
+    the static system prompt and the per-call volatile dynamic prompt,
+    both of which are passed to ``build_messages`` each call.
+    """
+    long_lived: List[Message] = []
+    if initial_context is not None:
+        long_lived.append(
+            {
+                "role": "system",
+                "content": initial_context,
+                "_llmbuffer": {"context_key": context_key},
+            }
+        )
+    return {"version": STATE_VERSION, "long_lived": long_lived, "short_term": []}
 
 
 def copy_state(state: State) -> State:

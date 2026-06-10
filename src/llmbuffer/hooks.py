@@ -29,6 +29,18 @@ def identity_transition_hook(messages: List[Message]) -> List[Message]:
     return list(messages)
 
 
+def concat_context_consolidation_hook(key: str, messages: List[Message]) -> str:
+    """Default context consolidation: concatenate the block and its deltas.
+
+    Lossless and requires no LLM call — it just relocates the delta tokens
+    into the consolidated block. Supply your own hook to truly rewrite the
+    context (apply diffs mechanically, summarize with an LLM, etc.).
+    """
+    return "\n\n".join(
+        m.get("content", "") for m in messages if m.get("content")
+    )
+
+
 def drop_tool_messages_transition_hook(messages: List[Message]) -> List[Message]:
     """Example transition hook: filter out tool calls and tool outputs
     before committing to the long-lived (cached) history."""

@@ -126,6 +126,46 @@ manager = PromptManager(
 
 The hook receives the list of short-term messages being committed and returns whatever should actually land in long-lived history. Drop messages entirely, summarise them, replace binary blobs with descriptions — the returned list is what gets cached.
 
+### Dynamic context: two channels
+
+Context that changes during a conversation comes in two flavours, and they want different placement:
+
+| | Volatile context | Durable context |
+|---|---|---|
+| Changes | every call, significantly | rarely, in small deltas |
+| Examples | timestamps, RAG results, mutable UI state | world state, user profile, session goals |
+| Use | `dynamic_system_prompt=` on `build_messages()` | `append_context()` |
+| Placement | end of the list, never cached | in the history stream, cached |
+
+**Volatile context** is passed per-call and never stored — it sits after the cached prefix where it can't invalidate anything.
+
+**Durable context** is appended as a keyed system message, riding the normal transition path so temporal ordering is preserved — a mid-turn update lands at the high-attention end of the list, not buried in the prefix:
+
+```python
+manager = PromptManager(
+    static_system_prompt=SYSTEM,
+    initial_context=initial_world_state,    # seeds the stable prefix at creation
+    context_key="world",
+    max_tokens=8_000,
+)
+# later, when something changes:
+manager.append_context("Update: the inventory now contains 3 keys.")
+```
+
+At compaction time, the initial context and all its deltas are **consolidated**: a `ContextConsolidationHook` receives every message for a key (initial block first, deltas in order) and returns the new, fully rewritten context, which is placed at the front of the compacted history — right after the static system prompt. The default hook concatenates losslessly; supply your own to apply diffs or summarise with an LLM:
+
+```python
+def consolidate(key, messages):
+    return rewrite_world_state(base=messages[0]["content"],
+                               deltas=[m["content"] for m in messages[1:]])
+
+manager = PromptManager(..., context_consolidation_hook=consolidate)
+```
+
+Keyed messages never pass through the lossy compaction hook — consolidation and lossy compaction are separate phases, and both always run once compaction triggers (the prefix is being rewritten anyway, so compact all the way down).
+
+> **What lives outside the state:** exactly two things are *not* carried in the serialized state — the **static system prompt** and the per-call **volatile dynamic prompt**. Everything else, including durable context and its deltas, round-trips through `dumps()`/`loads()`. In the stateless pattern: rehydrated state + your constant static prompt = the complete conversation.
+
 ### Compaction
 
 When the long-lived history exceeds `max_tokens`, a compaction hook reduces it to `max_tokens // 2` (configurable). The default hook truncates oldest-first; supply your own to summarise instead:
@@ -139,6 +179,34 @@ manager = PromptManager(max_tokens=8_000, compaction_hook=summarise)
 # Functional API: compaction is an explicit call
 # state = functional.compact(state, max_tokens=8_000, compaction_hook=summarise)
 ```
+
+### Boundary metadata
+
+Pass `with_metadata=True` to `build_messages()` to also get the predicted cacheable-prefix layout — useful for logging, debugging, or asserting prefix stability in your own tests:
+
+```python
+messages, meta = manager.build_messages(dynamic_system_prompt=rag, with_metadata=True)
+# meta == {"boundaries": [0, 12], "prefix_message_count": 13,
+#          "prefix_tokens": 4203, "suffix_tokens": 310, "total_tokens": 4513}
+```
+
+These are predictions from prefix stability; actual cache hits are only reported in the provider's response usage metadata.
+
+### Request-budget compaction
+
+`compact()` budgets the long-lived history in isolation. When your real constraint is the whole request (static system + history + dynamic context ≤ context window), use `compact_for_request()`:
+
+```python
+state = functional.compact_for_request(
+    state,
+    request_budget=128_000,            # whole-request token budget
+    static_system_prompt=SYSTEM,       # measured (it's stable by contract)
+    reserved_tokens=8_000,             # fixed headroom for dynamic + short-term content
+)
+# or: manager.compact_for_request(request_budget=128_000, reserved_tokens=8_000)
+```
+
+`reserved_tokens` is deliberately a declared constant, not a measurement of the current turn: if the budget tracked the fluctuating dynamic content, compaction could trigger on one turn and not the next — rewriting the long-lived prefix and invalidating the cache. Reserve your worst case and the derived budget stays deterministic.
 
 ### Provider adapters
 
