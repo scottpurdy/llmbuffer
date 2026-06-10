@@ -248,12 +248,16 @@ The naive approach puts the static and dynamic system prompts together at the st
 
 | Metric | llmbuffer | naive |
 |--------|----------:|------:|
-| Cache hit ratio | **85.3%** | 66.1% |
+| Cache hit ratio (tokens served from cache) | **85.3%** | 66.1% |
 | Total cached tokens | **19,457** | 15,082 |
-| Est. cost (Anthropic, with caching) | **$0.016** | $0.028 |
-| Est. savings vs no caching | **76.7%** | 59.5% |
+| Est. input cost (Anthropic pricing) | **$0.016** | $0.028 |
 
-Every time the dynamic context rotates (turns 4, 7, 10, 13) the naive approach suffers a **full cache miss** — the changed system prompt invalidates the entire prefix. `llmbuffer` keeps the static system and long-lived history stable, so only the new suffix is uncached regardless of what the dynamic context does.
+**Bottom line: llmbuffer's input costs are ~43% lower than the naive approach** ($0.016 vs $0.028 for the same 15-turn conversation).
+
+How to read these numbers:
+
+- The **cache hit ratio** is the fraction of input tokens served from cache. It doesn't translate 1:1 into savings because cached tokens aren't free — on Anthropic pricing, cache reads cost 10% of the uncached rate. So savings vs. running with no caching at all = hit ratio × 90%: llmbuffer saves 76.7%, naive saves 59.5%.
+- The **llmbuffer-vs-naive comparison** is the dollar figures: $0.016 / $0.028 ≈ 57%, i.e. ~43% cheaper. The gap comes from the miss turns: every time the dynamic context rotates (turns 4, 7, 10, 13) the naive approach takes a **full cache miss** — the changed system prompt invalidates the entire prefix. llmbuffer keeps the static system and long-lived history stable, so only the new suffix is uncached regardless of what the dynamic context does. The gap widens with longer conversations, larger system prompts, and more frequent dynamic-context changes — and again when compaction starts (naive trimming rewrites the prefix every turn once the limit is hit).
 
 ### Run it yourself
 

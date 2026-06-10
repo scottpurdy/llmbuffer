@@ -340,8 +340,19 @@ def _comparison_markdown(llmbuf: BenchmarkReport, naive: BenchmarkReport) -> str
     if lc["cost_without_caching_usd"] > 0:
         summary += [
             f"| Est. cost (with caching)   | ${lc['cost_with_caching_usd']:>10} | ${nc['cost_with_caching_usd']:>10} |",
-            f"| Est. savings               | ${lc['savings_usd']:>10} ({lc['savings_pct']}%) | ${nc['savings_usd']:>10} ({nc['savings_pct']}%) |",
+            f"| Est. savings vs no caching | ${lc['savings_usd']:>10} ({lc['savings_pct']}%) | ${nc['savings_usd']:>10} ({nc['savings_pct']}%) |",
         ]
+        if nc["cost_with_caching_usd"] > 0:
+            vs_naive = 100 * (1 - lc["cost_with_caching_usd"] / nc["cost_with_caching_usd"])
+            summary += [
+                "",
+                f"**llmbuffer vs naive: {vs_naive:.1f}% lower input cost** "
+                f"(${lc['cost_with_caching_usd']} vs ${nc['cost_with_caching_usd']}).",
+                "",
+                "Note: the cache hit ratio is the fraction of tokens served from cache; "
+                "it exceeds the savings percentage because cached tokens are billed at a "
+                "reduced rate, not zero.",
+            ]
     return "\n".join([
         f"# llmbuffer benchmark — {llmbuf.provider} / {llmbuf.model}",
         f"> {n}-turn comparison: **llmbuffer** vs **naive** approach",
