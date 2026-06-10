@@ -33,14 +33,14 @@ pip install "llmbuffer[openai]"       # OpenAI prefix caching
 ### Stateful (in-process)
 
 ```python
-from llmbuffer import PromptManager, PromptConfig, AnthropicAdapter
+from llmbuffer import PromptManager, AnthropicAdapter
 
-manager = PromptManager(PromptConfig(
+manager = PromptManager(
     static_system_prompt="You are a senior software engineering assistant...",
     transition_mode="agent_cycle",   # auto-commit turns to the stable prefix
     adapter=AnthropicAdapter(),      # inject cache_control markers
     max_tokens=8_000,                # compact long-lived history beyond this
-))
+)
 
 # Each turn:
 manager.append({"role": "user", "content": user_message})
@@ -54,23 +54,25 @@ manager.append({"role": "assistant", "content": reply})
 Pure functions over a JSON-serializable state dict — persist it anywhere between requests:
 
 ```python
-from llmbuffer import functional, new_state, dumps, loads, PromptConfig
+from llmbuffer import functional, new_state, dumps, loads
 
-config = PromptConfig(
-    static_system_prompt="You are a senior software engineering assistant...",
-    transition_mode="manual",
-)
+SYSTEM = "You are a senior software engineering assistant..."
 
 # Load state from DB / session
 state = loads(row.conversation_json) if row else new_state()
 
 # Build messages, call LLM, store updated state
-state = functional.append_message(state, {"role": "user", "content": text}, config)
-messages = functional.build_messages(state, config, dynamic_system_prompt=rag_context)
+state = functional.append_message(state, {"role": "user", "content": text},
+                                  transition_mode="manual")
+messages = functional.build_messages(state, static_system_prompt=SYSTEM,
+                                     dynamic_system_prompt=rag_context)
 # ... call your LLM ...
-state = functional.append_message(state, reply, config)
+state = functional.append_message(state, reply, transition_mode="manual")
+state = functional.compact(state, max_tokens=8_000)   # explicit in the functional API
 row.conversation_json = dumps(state)
 ```
+
+Each function takes only the settings it uses — there's no config object to thread through. Compaction is an explicit `compact()` call in the functional API (the stateful `PromptManager` runs it automatically).
 
 ## How it works
 
@@ -113,10 +115,13 @@ def trim_tool_outputs(messages):
         result.append(msg)
     return result
 
-config = PromptConfig(
+manager = PromptManager(
     transition_mode="agent_cycle",
     transition_hook=trim_tool_outputs,
 )
+# Functional API: pass the hook directly
+# state = functional.append_message(state, msg, transition_mode="agent_cycle",
+#                                   transition_hook=trim_tool_outputs)
 ```
 
 The hook receives the list of short-term messages being committed and returns whatever should actually land in long-lived history. Drop messages entirely, summarise them, replace binary blobs with descriptions — the returned list is what gets cached.
@@ -130,7 +135,9 @@ def summarise(messages, target_tokens, adapter):
     summary = call_llm_to_summarise(messages)
     return [{"role": "system", "content": summary}]
 
-config = PromptConfig(max_tokens=8_000, compaction_hook=summarise)
+manager = PromptManager(max_tokens=8_000, compaction_hook=summarise)
+# Functional API: compaction is an explicit call
+# state = functional.compact(state, max_tokens=8_000, compaction_hook=summarise)
 ```
 
 ### Provider adapters
