@@ -30,8 +30,14 @@ from .adapters import (
     ProviderAdapter,
     TransformersAdapter,
 )
-from .config import CompactionHook, TransitionHook, TransitionMode
+from .config import (
+    CompactionHook,
+    ContextConsolidationHook,
+    TransitionHook,
+    TransitionMode,
+)
 from .hooks import (
+    concat_context_consolidation_hook,
     drop_tool_messages_transition_hook,
     identity_transition_hook,
     truncation_compaction_hook,
@@ -39,7 +45,7 @@ from .hooks import (
 from .manager import PromptManager
 from .state import dumps, loads, new_state
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "AnthropicAdapter",
@@ -48,7 +54,9 @@ __all__ = [
     "TransformersAdapter",
     "TransitionMode",
     "CompactionHook",
+    "ContextConsolidationHook",
     "TransitionHook",
+    "concat_context_consolidation_hook",
     "PromptManager",
     "functional",
     "new_state",

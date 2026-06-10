@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llmbuffer"
-version = "0.2.0"
+version = "0.3.0"
 description = "Cache-optimized LLM conversation history management with static/dynamic system prompts, transition modes, and compaction hooks."
 readme = "README.md"
 license = { file = "LICENSE" }
