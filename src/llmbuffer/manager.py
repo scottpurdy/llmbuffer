@@ -12,7 +12,12 @@ from typing import Any, List, Optional, Union
 
 from . import functional, state as state_mod
 from .adapters import OpenAIAdapter, ProviderAdapter
-from .config import CompactionHook, TransitionHook, TransitionMode
+from .config import (
+    CompactionHook,
+    ContextConsolidationHook,
+    TransitionHook,
+    TransitionMode,
+)
 from .state import Message, State
 
 
@@ -61,7 +66,10 @@ class PromptManager:
         post_compaction_token_threshold: Optional[int] = None,
         compaction_hook: Optional[CompactionHook] = None,
         transition_hook: Optional[TransitionHook] = None,
+        context_consolidation_hook: Optional[ContextConsolidationHook] = None,
         dynamic_system_role: str = "system",
+        initial_context: Optional[str] = None,
+        context_key: str = "context",
         state: Optional[State] = None,
     ):
         self.static_system_prompt = static_system_prompt
@@ -72,8 +80,17 @@ class PromptManager:
         self.post_compaction_token_threshold = post_compaction_token_threshold
         self.compaction_hook = compaction_hook
         self.transition_hook = transition_hook
+        self.context_consolidation_hook = context_consolidation_hook
         self.dynamic_system_role = dynamic_system_role
-        self._state = state_mod.validate_state(state) if state else state_mod.new_state()
+        self.context_key = context_key
+        if state is not None:
+            if initial_context is not None:
+                raise ValueError("pass either state or initial_context, not both")
+            self._state = state_mod.validate_state(state)
+        else:
+            self._state = state_mod.new_state(
+                initial_context=initial_context, context_key=context_key
+            )
 
     # -- state access -----------------------------------------------------
 
@@ -102,6 +119,18 @@ class PromptManager:
         )
         return self._auto_compact()
 
+    def append_context(self, content: str, key: Optional[str] = None) -> "PromptManager":
+        """Append a dynamic-context update (keyed system message). Follows
+        the normal transition path; consolidated at compaction time."""
+        self._state = functional.append_context(
+            self._state,
+            content,
+            key=key if key is not None else self.context_key,
+            transition_mode=self.transition_mode,
+            transition_hook=self.transition_hook,
+        )
+        return self._auto_compact()
+
     def append_many(self, messages: List[Message]) -> "PromptManager":
         for message in messages:
             self.append(message)
@@ -124,6 +153,7 @@ class PromptManager:
             compaction_threshold=self.compaction_threshold,
             post_compaction_token_threshold=self.post_compaction_token_threshold,
             compaction_hook=self.compaction_hook,
+            context_consolidation_hook=self.context_consolidation_hook,
             adapter=self.adapter,
         )
         return self
@@ -131,11 +161,31 @@ class PromptManager:
     def _auto_compact(self) -> "PromptManager":
         return self.compact()
 
+    def compact_for_request(
+        self, request_budget: int, reserved_tokens: int = 0
+    ) -> "PromptManager":
+        """Compact so static system + history + ``reserved_tokens`` headroom
+        fits ``request_budget``. See :func:`llmbuffer.functional.compact_for_request`
+        for why the headroom is a declared constant rather than measured."""
+        self._state = functional.compact_for_request(
+            self._state,
+            request_budget,
+            static_system_prompt=self.static_system_prompt,
+            reserved_tokens=reserved_tokens,
+            compaction_threshold=self.compaction_threshold,
+            post_compaction_token_threshold=self.post_compaction_token_threshold,
+            compaction_hook=self.compaction_hook,
+            context_consolidation_hook=self.context_consolidation_hook,
+            adapter=self.adapter,
+        )
+        return self
+
     def build_messages(
         self,
         dynamic_system_prompt: Optional[str] = None,
         apply_cache_markers: bool = True,
-    ) -> List[Message]:
+        with_metadata: bool = False,
+    ):
         return functional.build_messages(
             self._state,
             static_system_prompt=self.static_system_prompt,
@@ -143,6 +193,7 @@ class PromptManager:
             dynamic_system_role=self.dynamic_system_role,
             adapter=self.adapter,
             apply_cache_markers=apply_cache_markers,
+            with_metadata=with_metadata,
         )
 
     def cache_prefix(self):
